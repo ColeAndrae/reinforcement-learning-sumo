@@ -204,7 +204,7 @@ const rsp=new THREE.PointLight(0xff2040,2,15);rsp.position.set(-4,5,0);scene.add
 const bsp=new THREE.PointLight(0x2060ff,2,15);bsp.position.set(4,5,0);scene.add(bsp);
 const ug=new THREE.PointLight(0xff8800,0.8,8);ug.position.set(0,-0.5,0);scene.add(ug);
 
-scene.add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(60,60),new THREE.MeshStandardMaterial({color:0x0c0c18,roughness:0.85})),{rotation:{x:-Math.PI/2},position:{y:-0.02},receiveShadow:true}));
+const gnd=new THREE.Mesh(new THREE.PlaneGeometry(60,60),new THREE.MeshStandardMaterial({color:0x0c0c18,roughness:0.85}));gnd.rotation.x=-Math.PI/2;gnd.position.y=-0.02;gnd.receiveShadow=true;scene.add(gnd);
 const rng=new THREE.Mesh(new THREE.CylinderGeometry(R,R+0.3,RH,64),new THREE.MeshStandardMaterial({color:0x1a1520,roughness:0.4,metalness:0.3}));
 rng.position.y=RH/2;rng.receiveShadow=true;rng.castShadow=true;scene.add(rng);
 const srf=new THREE.Mesh(new THREE.CylinderGeometry(R-0.05,R-0.05,0.02,64),new THREE.MeshStandardMaterial({color:0x2a2030,roughness:0.3,metalness:0.5}));

@@ -65,8 +65,12 @@ class SumoEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         j = self.np_random.uniform(-0.3, 0.3, 2)
-        self.state[0] = np.array([-2.5+j[0], j[1], 0., 0.])
-        self.state[1] = np.array([ 2.5-j[0],-j[1], 0., 0.])
+        # Randomize starting angle so agent learns all orientations
+        theta = self.np_random.uniform(0, 2 * math.pi)
+        r = 2.5
+        c, s = math.cos(theta), math.sin(theta)
+        self.state[0] = np.array([-r*c + j[0], -r*s + j[1], 0., 0.])
+        self.state[1] = np.array([ r*c - j[0],  r*s - j[1], 0., 0.])
         self.steps = 0
         self._prev_dist = _len(self.state[1][0]-self.state[0][0],
                                self.state[1][1]-self.state[0][1])
