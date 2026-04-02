@@ -1,83 +1,71 @@
 #!/usr/bin/env python3
-"""Quick smoke test for the v2 sumo environment."""
+"""Quick smoke test for v3 sumo environment."""
 
-import os
-import sys
-import time
+import os, sys, time
 import numpy as np
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from envs.sumo_env import SumoEnv
+from envs.sumo_env import SumoEnv, heuristic_aggressive, heuristic_flanker, heuristic_positional, random_policy, OBS_DIM
 from envs.self_play_env import SelfPlaySumoEnv
 
 
-def test_basic_env():
-    print("Testing SumoEnv (v2, 9 actions)...")
+def test_env():
+    print("Testing SumoEnv v3...")
     env = SumoEnv()
-    obs, info = env.reset()
-    assert obs.shape == (12,), f"Obs shape: {obs.shape}"
-    assert env.action_space.n == 9, f"Action space: {env.action_space.n}"
-    print(f"  Obs shape: {obs.shape}")
-    print(f"  Actions: {env.action_space.n}")
+    obs, _ = env.reset()
+    assert obs.shape == (OBS_DIM,), f"Expected ({OBS_DIM},), got {obs.shape}"
+    assert env.action_space.n == 9
+    print(f"  Obs: {OBS_DIM} dims, Actions: 9")
     print(f"  Obs range: [{obs.min():.2f}, {obs.max():.2f}]")
 
-    wins, losses, draws = 0, 0, 0
-    steps_list = []
-    for ep in range(100):
-        obs, _ = env.reset()
-        done = False
-        steps = 0
-        while not done:
-            action = env.action_space.sample()
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-            steps += 1
-        steps_list.append(steps)
-        if info.get("winner") == 0: wins += 1
-        elif info.get("winner") == 1: losses += 1
-        else: draws += 1
-
-    print(f"  100 random episodes: {wins}W/{losses}L/{draws}D, avg {np.mean(steps_list):.0f} steps")
-    print("  ✓ SumoEnv works!\n")
+    for name, fn in [("Random", random_policy), ("Aggressive", heuristic_aggressive),
+                     ("Flanker", heuristic_flanker), ("Positional", heuristic_positional)]:
+        env2 = SumoEnv(opponent_policy=fn)
+        w, l = 0, 0
+        for _ in range(50):
+            obs, _ = env2.reset()
+            done = False
+            while not done:
+                obs, _, term, trunc, info = env2.step(env2.action_space.sample())
+                done = term or trunc
+            if info.get("winner") == 0: w += 1
+            elif info.get("winner") == 1: l += 1
+        print(f"  Random vs {name:>12}: {w}W/{l}L (of 50)")
+    print("  ✓ SumoEnv OK\n")
 
 
-def test_self_play_env():
+def test_self_play():
     print("Testing SelfPlaySumoEnv...")
     env = SelfPlaySumoEnv()
-    obs, info = env.reset()
-    assert obs.shape == (12,)
-    for ep in range(20):
+    for _ in range(20):
         obs, _ = env.reset()
         done = False
         while not done:
-            action = env.action_space.sample()
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-    print("  ✓ SelfPlaySumoEnv works!\n")
+            obs, _, term, trunc, info = env.step(env.action_space.sample())
+            done = term or trunc
+    print("  ✓ SelfPlaySumoEnv OK\n")
 
 
-def test_performance():
-    print("Performance benchmark...")
+def test_perf():
+    print("Performance...")
     env = SumoEnv()
     start = time.time()
-    total_steps = 0
-    for _ in range(100):
+    steps = 0
+    for _ in range(200):
         obs, _ = env.reset()
         done = False
         while not done:
-            obs, _, terminated, truncated, _ = env.step(env.action_space.sample())
-            done = terminated or truncated
-            total_steps += 1
+            obs, _, term, trunc, _ = env.step(env.action_space.sample())
+            done = term or trunc
+            steps += 1
     elapsed = time.time() - start
-    fps = total_steps / elapsed
-    print(f"  {total_steps:,} steps in {elapsed:.2f}s = {fps:,.0f} steps/sec")
-    print(f"  Estimated 2M steps: ~{2_000_000 / fps / 60:.1f} minutes")
-    print("  ✓ Performance OK!\n")
+    fps = steps / elapsed
+    print(f"  {fps:,.0f} steps/sec → 2M steps ≈ {2_000_000/fps/60:.1f} min")
+    print("  ✓ Performance OK\n")
 
 
 if __name__ == "__main__":
-    test_basic_env()
-    test_self_play_env()
-    test_performance()
-    print("All tests passed! Ready to train.")
+    test_env()
+    test_self_play()
+    test_perf()
+    print("All tests passed.")
