@@ -1,113 +1,44 @@
 #!/usr/bin/env python3
-"""
-export_to_js.py v3 — Export trained policy to JSON and verify correctness.
-
-Extracts weight matrices from the PPO MlpPolicy and verifies the
-manual forward pass matches SB3's predict() on 100 random inputs.
-"""
-
-import os
-import sys
-import json
-import argparse
-import numpy as np
-
+"""export_to_js.py v4"""
+import os, sys, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from stable_baselines3 import PPO
 
-
-def extract_policy_weights(model):
-    policy = model.policy
+def main():
+    model = PPO.load(os.path.join(os.getcwd(), 'models', 'sumo_final'))
     layers = []
-    for name, param in policy.mlp_extractor.policy_net.named_parameters():
-        layers.append({
-            "name": f"policy_net.{name}",
-            "shape": list(param.shape),
-            "data": param.detach().cpu().numpy().tolist(),
-        })
-    for name, param in policy.action_net.named_parameters():
-        layers.append({
-            "name": f"action_net.{name}",
-            "shape": list(param.shape),
-            "data": param.detach().cpu().numpy().tolist(),
-        })
-    return layers
+    for name, param in model.policy.mlp_extractor.policy_net.named_parameters():
+        layers.append(('policy.'+name, param.detach().cpu().numpy()))
+    for name, param in model.policy.action_net.named_parameters():
+        layers.append(('action.'+name, param.detach().cpu().numpy()))
 
-
-def build_js_model(layers):
-    processed = []
+    js = {'layers': []}
     i = 0
     while i < len(layers):
-        w = layers[i]
-        b = layers[i + 1] if i + 1 < len(layers) else None
-        if "weight" in w["name"] and b and "bias" in b["name"]:
-            processed.append({"weight": w["data"], "bias": b["data"]})
+        if 'weight' in layers[i][0] and i+1 < len(layers) and 'bias' in layers[i+1][0]:
+            js['layers'].append({'weight': layers[i][1].tolist(), 'bias': layers[i+1][1].tolist()})
             i += 2
         else:
             i += 1
-    return {"architecture": "mlp", "activation": "tanh", "layers": processed}
 
-
-def manual_forward(js_model, obs):
-    """Replicate the JS forward pass in Python."""
-    x = obs.copy().astype(np.float64)
-    for i, layer in enumerate(js_model["layers"]):
-        w = np.array(layer["weight"])
-        b = np.array(layer["bias"])
-        x = x @ w.T + b
-        if i < len(js_model["layers"]) - 1:
-            x = np.tanh(x)
-    return int(np.argmax(x))
-
-
-def verify_export(model, js_model, n_tests=100):
-    """Verify manual forward pass matches SB3 on random inputs."""
+    # Verify
     mismatches = 0
-    for _ in range(n_tests):
-        obs = np.random.uniform(-1.5, 1.5, size=(14,)).astype(np.float32)
-        sb3_action, _ = model.predict(obs, deterministic=True)
-        manual_action = manual_forward(js_model, obs)
-        if int(sb3_action) != manual_action:
-            mismatches += 1
-    return mismatches
+    for _ in range(200):
+        obs = np.random.uniform(-1.5, 1.5, 10).astype(np.float32)
+        sb3_a, _ = model.predict(obs, deterministic=True)
+        x = obs.astype(np.float64)
+        for j, l in enumerate(js['layers']):
+            x = x @ np.array(l['weight']).T + np.array(l['bias'])
+            if j < len(js['layers'])-1: x = np.tanh(x)
+        if int(sb3_a) != int(np.argmax(x)): mismatches += 1
 
+    print(f'Architecture: {" → ".join(str(np.array(l["weight"]).shape[1]) for l in js["layers"])} → {np.array(js["layers"][-1]["weight"]).shape[0]}')
+    print(f'Verification: {200-mismatches}/200 match' + (' ✓' if mismatches==0 else f' ✗ ({mismatches} mismatches!)'))
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="models/sumo_final")
-    parser.add_argument("--output", type=str, default="models/policy.json")
-    args = parser.parse_args()
+    out = os.path.join(os.getcwd(), 'models', 'policy.json')
+    with open(out, 'w') as f:
+        json.dump(js, f, separators=(',',':'))
+    print(f'Exported: {out} ({os.path.getsize(out)/1024:.0f} KB)')
 
-    model_path = os.path.abspath(args.model)
-    output_path = os.path.abspath(args.output)
-
-    print(f"Loading model: {model_path}")
-    model = PPO.load(model_path)
-
-    print("Extracting weights...")
-    layers = extract_policy_weights(model)
-    js_model = build_js_model(layers)
-
-    for i, layer in enumerate(js_model["layers"]):
-        w = np.array(layer["weight"])
-        act = "tanh" if i < len(js_model["layers"]) - 1 else "none (logits)"
-        print(f"  Layer {i}: {w.shape[1]} → {w.shape[0]}  [{act}]")
-
-    print(f"\nVerifying on 100 random inputs...")
-    mismatches = verify_export(model, js_model, n_tests=100)
-    if mismatches:
-        print(f"  ✗ {mismatches}/100 MISMATCHES — export may be broken!")
-    else:
-        print(f"  ✓ 100/100 match perfectly")
-
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(js_model, f, separators=(',', ':'))
-
-    size_kb = os.path.getsize(output_path) / 1024
-    print(f"\nExported: {output_path} ({size_kb:.0f} KB)")
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
